@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Folder.play</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- Drop zone overlay (shown when no library loaded) -->
+    <div id="drop-zone" class="drop-zone">
+      <div class="drop-zone__inner">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M3 15a4 4 0 004 4h10a4 4 0 000-8 5 5 0 00-9.9-1A4 4 0 003 15z"/>
+          <polyline points="16 16 12 12 8 16"/>
+          <line x1="12" y1="12" x2="12" y2="21"/>
+        </svg>
+        <h2>Drop your music folder here</h2>
+        <p>Or <button id="folder-picker-btn" class="link-btn">click to choose a folder</button></p>
+        <input type="file" id="folder-input" webkitdirectory multiple style="display:none">
+      </div>
+    </div>
+
+    <!-- Main library view (hidden until loaded) -->
+    <div id="library-view" class="library-view hidden">
+
+      <!-- Toolbar -->
+      <header class="toolbar">
+        <div class="toolbar__left">
+          <span class="toolbar__title">Folder.play</span>
+          <button id="rescan-btn" class="icon-btn" title="Rescan library">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="23 4 23 10 17 10"/>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            </svg>
+          </button>
+          <button id="clear-library-btn" class="icon-btn" title="Clear library">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6l-1 14H6L5 6"/>
+              <path d="M10 11v6M14 11v6"/>
+              <path d="M9 6V4h6v2"/>
+            </svg>
+          </button>
+        </div>
+        <div class="toolbar__controls">
+          <select id="sort-select">
+            <option value="az">A → Z</option>
+            <option value="za">Z → A</option>
+            <option value="plays">Play count</option>
+            <option value="added">Recently added</option>
+            <option value="year">Year</option>
+          </select>
+          <select id="filter-select">
+            <option value="all">All</option>
+            <option value="favourites">Favourites only</option>
+          </select>
+          <select id="health-filter-select">
+            <option value="all">All health</option>
+            <option value="no-cover">Needs cover</option>
+            <option value="no-tags">Needs tags</option>
+            <option value="needs-both">Needs both</option>
+          </select>
+        </div>
+        <div class="toolbar__right">
+          <span id="album-count" class="album-count"></span>
+          <div class="toolbar__zoom" title="Card size">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+            <input type="range" id="zoom-slider" min="120" max="320" step="10" value="200">
+          </div>
+          <div class="toolbar__root">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <input type="text" id="root-path-input" class="toolbar__root-input" placeholder="/Users/you/Music" title="Music root path (for Finder copy-path)">
+          </div>
+        </div>
+      </header>
+
+      <!-- Progress bar (shown during scan) -->
+      <div id="scan-progress" class="scan-progress hidden">
+        <div class="scan-progress__bar">
+          <div id="scan-progress-fill" class="scan-progress__fill"></div>
+        </div>
+        <span id="scan-progress-label" class="scan-progress__label">Scanning…</span>
+      </div>
+
+      <!-- Album grid -->
+      <main id="album-grid" class="album-grid"></main>
+    </div>
+
+    <!-- Album detail panel -->
+    <div id="detail-panel" class="detail-panel hidden"></div>
+
+    <!-- Now playing bar -->
+    <div id="now-playing-bar" class="now-playing-bar hidden"></div>
+
+    <!-- Context menu -->
+    <div id="context-menu" class="context-menu hidden"></div>
+
+    <!-- Toast container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Edit metadata modal -->
+    <div id="edit-modal" class="modal hidden">
+      <div class="modal__backdrop"></div>
+      <div class="modal__box">
+        <h3 class="modal__title">Edit Album Info</h3>
+        <label>Title
+          <input id="edit-title" type="text" autocomplete="off">
+        </label>
+        <label>Artist
+          <input id="edit-artist" type="text" autocomplete="off">
+        </label>
+        <label>Year
+          <input id="edit-year" type="text" autocomplete="off" maxlength="4" pattern="\d{4}">
+        </label>
+        <div class="modal__actions">
+          <button id="edit-cancel-btn" class="btn btn--ghost">Cancel</button>
+          <button id="edit-save-btn" class="btn btn--primary">Save</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- app.js is the entry point; it imports everything else via ES modules -->
+  <script type="module" src="app.js"></script>
+  <!-- nowplaying.js runs independently (wires player events + keyboard shortcuts) -->
+  <script type="module" src="ui/nowplaying.js"></script>
+</body>
+</html>
