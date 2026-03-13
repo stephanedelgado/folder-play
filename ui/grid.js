@@ -8,6 +8,22 @@ import { putOverride, updateAlbumField, getPref } from '../db.js';
 import { showDetail } from './detail.js';
 import { showToast } from './toast.js';
 
+// ── Lucide icons ──────────────────────────────────────────────────────────────
+
+function lucide(paths, size = 14) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+}
+
+const L = {
+  play:      lucide(`<polygon points="5 3 19 12 5 21 5 3"/>`),
+  squarePen: lucide(`<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>`),
+  penTool:   lucide(`<path d="m12 19 7-7 3 3-7 7-3-3z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="m2 2 7.586 7.586"/><circle cx="11" cy="11" r="2"/>`),
+  scanEye:   lucide(`<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="1"/><path d="M5 12s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/>`),
+  star:      lucide(`<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>`),
+};
+
+const STAR_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`;
+
 // ── Placeholder (grey + missing-image icon) ───────────────────────────────────
 
 const MISSING_IMAGE_SVG = `
@@ -46,7 +62,7 @@ function renderTile(album) {
           <svg viewBox="0 0 24 24" fill="white" width="36" height="36"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
         </span>
       </button>
-      <button class="album-tile__fav ${album.favourite ? 'is-fav' : ''}" title="Toggle favourite" aria-label="Favourite">★</button>
+      <button class="album-tile__fav ${album.favourite ? 'is-fav' : ''}" title="Toggle favourite" aria-label="Favourite">${STAR_SVG}</button>
     </div>
     <div class="album-tile__info">
       <div class="album-tile__footer">
@@ -158,11 +174,11 @@ export function showContextMenu(x, y, album) {
 
   const menu = document.getElementById('context-menu');
   menu.innerHTML = `
-    <button data-action="play">&#9654;&#xFE0E;&#xA0; Play now</button>
-    <button data-action="edit">&#9998;&#xA0; Edit metadata</button>
-    <button data-action="copy-path">&#128194;&#xA0; Copy path to clipboard</button>
-    <button data-action="rescan">&#128260;&#xA0; Rescan this album</button>
-    <button data-action="fav">${album.favourite ? '&#10029;' : '&#9733;'}&#xA0; ${album.favourite ? 'Unfavourite' : 'Favourite'}</button>
+    <button data-action="play">${L.play} Play now</button>
+    <button data-action="edit">${L.squarePen} Edit metadata</button>
+    <button data-action="copy-path">${L.penTool} Copy path</button>
+    <button data-action="rescan">${L.scanEye} Rescan this album</button>
+    <button data-action="fav">${L.star} ${album.favourite ? 'Unfavourite' : 'Favourite'}</button>
   `;
   menu.classList.remove('hidden');
 
@@ -223,6 +239,13 @@ function hideContextMenu() {
   menu.removeEventListener('click', onMenuClick);
   _activeMenu = null;
 }
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    const menu = document.getElementById('context-menu');
+    if (!menu.classList.contains('hidden')) hideContextMenu();
+  }
+});
 
 // ── Edit modal ────────────────────────────────────────────────────────────────
 

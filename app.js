@@ -131,9 +131,9 @@ async function rescanFromMemory() {
 
   let count = 0;
   for (const [id, fileGroup] of entries) {
-    // Revoke stale cover blob URL so the waterfall runs fresh
+    // Null out stale cover so the waterfall runs completely fresh
     const staleAlbum = _allAlbums.find(a => a.id === id);
-    if (staleAlbum?.cover) { try { URL.revokeObjectURL(staleAlbum.cover); } catch { /**/ } }
+    if (staleAlbum) staleAlbum.cover = null;
 
     const fakeMap = new Map([[id, fileGroup]]);
 
@@ -312,13 +312,14 @@ document.addEventListener('rescan-album', async e => {
     showToast('Re-drop your music folder to rescan');
     return;
   }
-  // Revoke stale cover blob URL so the waterfall runs fresh
-  if (album.cover) { try { URL.revokeObjectURL(album.cover); } catch { /**/ } }
+  // Null out stale cover in IDB and revoke blob URL so waterfall runs fresh
+  album.cover = null;
   const fakeMap = new Map([[album.id, fileGroup]]);
   for await (const { album: fresh } of scanAlbums(fakeMap)) {
     fresh.favourite = album.favourite;
     fresh.playCount = album.playCount;
     fresh.addedAt   = album.addedAt;
+    _fileMap.set(fresh.id, { audioFiles: fresh.audioFiles, imageFiles: fresh.imageFiles });
     const idx = _allAlbums.findIndex(a => a.id === fresh.id);
     if (idx >= 0) _allAlbums[idx] = fresh;
     await putAlbum(fresh);

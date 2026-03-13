@@ -6,7 +6,8 @@
 import { player } from '../player.js';
 import { showEditModal } from './grid.js';
 import { IMAGE_EXTS } from '../scanner.js';
-import { updateAlbumField } from '../db.js';
+import { updateAlbumField, getPref } from '../db.js';
+import { showToast } from './toast.js';
 
 function ext(name) { return name.slice(name.lastIndexOf('.') + 1).toLowerCase(); }
 function escHtml(str) { return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -14,6 +15,10 @@ function escHtml(str) { return String(str).replace(/&/g,'&amp;').replace(/</g,'&
 function displayName(filename) {
   return filename.replace(/\.[^.]+$/, '').replace(/^\d+[\s._\-]+/, '');
 }
+
+const STAR_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`;
+
+const ICON_COPY_PATH = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19 7-7 3 3-7 7-3-3z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="m2 2 7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>`;
 
 const MISSING_SVG = `
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
@@ -23,6 +28,18 @@ const MISSING_SVG = `
   </svg>`;
 
 let _currentAlbum = null;
+
+async function copyTrackFilePath(file) {
+  const root = await getPref('musicRoot', '');
+  let path = file.webkitRelativePath || file.name;
+  if (root) {
+    const rel = path.split('/').slice(1).join('/');
+    path = rel ? `${root}/${rel}` : root;
+  }
+  navigator.clipboard.writeText(path).then(() => {
+    showToast(`Path copied \u2014 press \u2318\u21E7G in Finder to navigate`);
+  });
+}
 
 export function showDetail(album) {
   _currentAlbum = album;
@@ -81,11 +98,11 @@ export function showDetail(album) {
               ${album.format ? `<span class="detail__format">${escHtml(album.format)}</span>` : ''}
             </div>
           </div>
-          <button class="detail__fav ${album.favourite ? 'is-fav' : ''}" title="Toggle favourite" aria-label="Favourite">★</button>
+          <button class="detail__fav ${album.favourite ? 'is-fav' : ''}" title="Toggle favourite" aria-label="Favourite">${STAR_SVG}</button>
         </div>
         <div class="detail__actions">
           <button class="btn btn--primary detail__play-all">&#9654;&#xFE0E; Play all</button>
-          <button class="btn btn--ghost detail__edit">&#9998; Edit</button>
+          <button class="btn btn--ghost detail__edit"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Edit</button>
         </div>
         ${images.length > 1 ? `
         <div class="detail__gallery">
@@ -119,6 +136,33 @@ export function showDetail(album) {
     const row = e.target.closest('.tracklist__row');
     if (!row) return;
     player.loadAlbum(album, tracks, parseInt(row.dataset.index, 10));
+  });
+
+  panel.querySelector('#tracklist-body').addEventListener('contextmenu', async e => {
+    e.preventDefault();
+    const row = e.target.closest('.tracklist__row');
+    if (!row) return;
+    const file = tracks[parseInt(row.dataset.index, 10)];
+    if (!file) return;
+
+    const menu = document.getElementById('context-menu');
+    menu.innerHTML = `<button data-action="copy-track-path">${ICON_COPY_PATH} Copy path</button>`;
+    menu.classList.remove('hidden');
+    const pad = 8, mw = 180, mh = 48;
+    menu.style.left = `${Math.min(e.clientX, window.innerWidth  - mw - pad)}px`;
+    menu.style.top  = `${Math.min(e.clientY, window.innerHeight - mh - pad)}px`;
+
+    function onTrackMenu(ev) {
+      const btn = ev.target.closest('button[data-action]');
+      menu.classList.add('hidden');
+      menu.removeEventListener('click', onTrackMenu);
+      if (btn?.dataset.action === 'copy-track-path') copyTrackFilePath(file);
+    }
+    menu.addEventListener('click', onTrackMenu);
+    setTimeout(() => document.addEventListener('click', () => {
+      menu.classList.add('hidden');
+      menu.removeEventListener('click', onTrackMenu);
+    }, { once: true }), 0);
   });
 
   updateTrackHighlight();
