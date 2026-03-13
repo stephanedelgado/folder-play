@@ -73,6 +73,10 @@ function renderTile(album) {
     </div>
   `;
 
+  // Hover state via JS to prevent re-triggering on child clicks
+  div.addEventListener('mouseenter', () => div.classList.add('is-hovered'));
+  div.addEventListener('mouseleave', () => div.classList.remove('is-hovered'));
+
   // Update play-icon state
   syncPlayState(div, album);
 

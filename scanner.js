@@ -62,6 +62,58 @@ async function readAudioBuffer(file, maxBytes = 512 * 1024) {
   return new Uint8Array(await file.slice(0, maxBytes).arrayBuffer());
 }
 
+/**
+ * Read exactly the bytes that make up the complete ID3v2 tag for an MP3.
+ * The 10-byte ID3v2 header encodes the full tag body size in syncsafe
+ * integers at bytes 6–9. We read that first, then read the declared size.
+ * Returns null if the file has no ID3v2 header.
+ */
+async function readFullID3v2(file) {
+  const hdr = new Uint8Array(await file.slice(0, 10).arrayBuffer());
+  if (hdr[0] !== 0x49 || hdr[1] !== 0x44 || hdr[2] !== 0x33) return null;
+  const tagBodySize = syncsafe(hdr, 6);
+  const total = 10 + tagBodySize;
+  return new Uint8Array(await file.slice(0, total).arrayBuffer());
+}
+
+/**
+ * Read all FLAC metadata blocks (everything before the first audio frame).
+ * Walks block headers sequentially — each header is 4 bytes — to find
+ * where metadata ends, then does one final read of exactly that many bytes.
+ * Returns null if the file is not a FLAC file.
+ */
+async function readFullFLACMeta(file) {
+  // Read an initial chunk large enough for typical metadata.
+  // If a block extends beyond it we'll re-read with the correct size.
+  const INIT = 256 * 1024;
+  let buf = new Uint8Array(await file.slice(0, Math.min(INIT, file.size)).arrayBuffer());
+  if (buf[0] !== 0x66 || buf[1] !== 0x4C || buf[2] !== 0x61 || buf[3] !== 0x43) return null;
+
+  let offset = 4; // skip "fLaC" signature
+  while (offset + 4 <= buf.length) {
+    const isLast    = (buf[offset] & 0x80) !== 0;
+    const blockSize = (buf[offset + 1] << 16) | (buf[offset + 2] << 8) | buf[offset + 3];
+    const blockEnd  = offset + 4 + blockSize;
+
+    if (isLast) {
+      // If the final block goes beyond what we already read, fetch the rest.
+      if (blockEnd > buf.length) {
+        buf = new Uint8Array(await file.slice(0, blockEnd).arrayBuffer());
+      }
+      return buf.slice(0, blockEnd);
+    }
+
+    // If next block header is beyond our buffer, extend the read and retry.
+    if (blockEnd + 4 > buf.length) {
+      const need = Math.min(blockEnd + INIT, file.size);
+      buf = new Uint8Array(await file.slice(0, need).arrayBuffer());
+    }
+
+    offset = blockEnd;
+  }
+  return buf;
+}
+
 function readUint32BE(buf, o) {
   return ((buf[o] << 24) | (buf[o+1] << 16) | (buf[o+2] << 8) | buf[o+3]) >>> 0;
 }
@@ -236,12 +288,14 @@ function picToBlob(pic) {
 export async function resolveCover(folderPath, { audioFiles, imageFiles }) {
   const albumDepth = folderPath.split('/').length; // number of path components in album dir
 
-  // 1. Embedded art
+  // 1. Embedded art — read the COMPLETE tag block for each file so that
+  //    large cover images (which routinely exceed 512 KB) are not truncated.
   for (const file of audioFiles.slice(0, 3)) {
     const e = ext(file.name);
     if (e !== 'mp3' && e !== 'flac') continue;
     try {
-      const buf = await readAudioBuffer(file);
+      const buf = e === 'mp3' ? await readFullID3v2(file) : await readFullFLACMeta(file);
+      if (!buf) continue;
       const tags = e === 'mp3' ? parseID3v2(buf) : parseFLAC(buf);
       if (tags?.picture) {
         const url = picToBlob(tags.picture);

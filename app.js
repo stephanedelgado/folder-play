@@ -12,7 +12,8 @@ import { showToast } from './ui/toast.js';
 // ── State ─────────────────────────────────────────────────────────────────────
 
 let _allAlbums = [];
-let _fileMap   = new Map(); // id → { audioFiles, imageFiles }
+let _fileMap   = new Map(); // id → { audioFiles, imageFiles }  (legacy fallback)
+let _dirHandle = null;      // FileSystemDirectoryHandle — enables live filesystem rescan
 
 let _sortMode     = 'az';
 let _filterMode   = 'all';
@@ -83,17 +84,17 @@ async function scanFiles(fileList) {
     // Merge user overrides
     const ov = overrideMap.get(album.id);
     if (ov) {
-      if (ov.title)            album.title  = ov.title;
-      if (ov.artist)           album.artist = ov.artist;
-      if (ov.year !== undefined) album.year = ov.year;
+      if (ov.title)              album.title  = ov.title;
+      if (ov.artist)             album.artist = ov.artist;
+      if (ov.year !== undefined) album.year   = ov.year;
     }
 
-    // Preserve favourite / playCount from previous in-memory or IDB state
+    // Preserve favourite / playCount from previous in-memory state
     const prev = _allAlbums.find(a => a.id === album.id);
     if (prev) {
-      album.favourite  = prev.favourite  ?? album.favourite;
-      album.playCount  = prev.playCount  ?? album.playCount;
-      album.addedAt    = prev.addedAt    ?? album.addedAt;
+      album.favourite = prev.favourite ?? album.favourite;
+      album.playCount = prev.playCount ?? album.playCount;
+      album.addedAt   = prev.addedAt   ?? album.addedAt;
     }
 
     _fileMap.set(album.id, { audioFiles: album.audioFiles, imageFiles: album.imageFiles });
@@ -120,7 +121,70 @@ async function scanFiles(fileList) {
   showToast(`Scanned ${count} album${count !== 1 ? 's' : ''}`);
 }
 
-// ── Rescan all albums from in-memory file references ─────────────────────────
+// ── FileSystemDirectoryHandle helpers ─────────────────────────────────────────
+
+/**
+ * Recursively enumerate all files under a FileSystemDirectoryHandle.
+ * Each File object gets a `webkitRelativePath` set to `basePath/filename`
+ * so the rest of the pipeline (groupByAlbum, etc.) works unchanged.
+ */
+async function getAllFilesFromHandle(dirHandle, basePath) {
+  const files = [];
+  for await (const [name, entry] of dirHandle.entries()) {
+    const filePath = `${basePath}/${name}`;
+    if (entry.kind === 'file') {
+      // getFile() reads CURRENT state from disk — this is the key difference
+      // from the legacy File objects which are fixed at drop time.
+      const file = await entry.getFile();
+      Object.defineProperty(file, 'webkitRelativePath', { value: filePath, writable: false });
+      files.push(file);
+    } else if (entry.kind === 'directory') {
+      const sub = await getAllFilesFromHandle(entry, filePath);
+      files.push(...sub);
+    }
+  }
+  return files;
+}
+
+/**
+ * Navigate from the root handle down to the subdirectory identified by folderPath.
+ * folderPath looks like "RootDirName/Artist/Album".
+ * The first component is the root handle's own name, so we skip it.
+ */
+async function getSubdirHandle(rootHandle, folderPath) {
+  const parts = folderPath.split('/').slice(1); // skip root dir name
+  let handle = rootHandle;
+  for (const part of parts) {
+    handle = await handle.getDirectoryHandle(part);
+  }
+  return handle;
+}
+
+/**
+ * Ensure the stored directory handle has read permission.
+ * In a drop event permission is automatic; on a subsequent rescan the
+ * browser may require re-prompting.
+ */
+async function ensurePermission(handle) {
+  const perm = await handle.queryPermission({ mode: 'read' });
+  if (perm === 'granted') return true;
+  const result = await handle.requestPermission({ mode: 'read' });
+  return result === 'granted';
+}
+
+// ── Full rescan via FileSystemDirectoryHandle ─────────────────────────────────
+
+async function rescanFromHandle() {
+  if (!await ensurePermission(_dirHandle)) {
+    showToast('Permission denied — re-drop your folder');
+    return;
+  }
+  showToast('Reading filesystem…');
+  const files = await getAllFilesFromHandle(_dirHandle, _dirHandle.name);
+  await scanFiles(files);
+}
+
+// ── Full rescan via legacy in-memory File objects ─────────────────────────────
 
 async function rescanFromMemory() {
   const overrides   = await getAllOverrides();
@@ -131,10 +195,6 @@ async function rescanFromMemory() {
 
   let count = 0;
   for (const [id, fileGroup] of entries) {
-    // Null out stale cover so the waterfall runs completely fresh
-    const staleAlbum = _allAlbums.find(a => a.id === id);
-    if (staleAlbum) staleAlbum.cover = null;
-
     const fakeMap = new Map([[id, fileGroup]]);
 
     for await (const { album: fresh } of scanAlbums(fakeMap)) {
@@ -167,6 +227,55 @@ async function rescanFromMemory() {
   showToast(`Rescanned ${count} album${count !== 1 ? 's' : ''}`);
 }
 
+// ── Single-album rescan via FileSystemDirectoryHandle ────────────────────────
+
+async function rescanAlbumFromHandle(album) {
+  if (!await ensurePermission(_dirHandle)) {
+    showToast('Permission denied — re-drop your folder');
+    return;
+  }
+
+  // Navigate to the album's own directory within the stored root handle.
+  // This re-enumerates the directory from disk, picking up any new files
+  // (cover.jpg added after the initial drop, newly embedded art, etc.).
+  const albumDirHandle = await getSubdirHandle(_dirHandle, album.folderPath);
+  const files = await getAllFilesFromHandle(albumDirHandle, album.folderPath);
+
+  const albumMap = groupByAlbum(files);
+  if (albumMap.size === 0) {
+    showToast('No audio files found in album folder');
+    return;
+  }
+
+  const overrides   = await getAllOverrides();
+  const overrideMap = new Map(overrides.map(o => [o.id, o]));
+
+  for await (const { album: fresh } of scanAlbums(albumMap)) {
+    const ov = overrideMap.get(fresh.id);
+    if (ov) {
+      if (ov.title)              fresh.title  = ov.title;
+      if (ov.artist)             fresh.artist = ov.artist;
+      if (ov.year !== undefined) fresh.year   = ov.year;
+    }
+
+    // Preserve user state
+    fresh.favourite = album.favourite;
+    fresh.playCount = album.playCount;
+    fresh.addedAt   = album.addedAt;
+
+    // Update file map with fresh File objects so future operations use them
+    _fileMap.set(fresh.id, { audioFiles: fresh.audioFiles, imageFiles: fresh.imageFiles });
+
+    const idx = _allAlbums.findIndex(a => a.id === fresh.id);
+    if (idx >= 0) _allAlbums[idx] = fresh;
+
+    await putAlbum(fresh);
+    updateTile(fresh);
+  }
+
+  showToast('Album rescanned');
+}
+
 // ── Drop zone / folder picker ─────────────────────────────────────────────────
 
 function initDropZone() {
@@ -177,11 +286,31 @@ function initDropZone() {
     dropZone.classList.add('drag-over');
   });
   dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+
   dropZone.addEventListener('drop', async e => {
     e.preventDefault();
     dropZone.classList.remove('drag-over');
     const items = [...e.dataTransfer.items].filter(i => i.kind === 'file');
     if (!items.length) return;
+
+    // Prefer File System Access API: gives us a live directory handle we can
+    // use on future rescans to re-read the filesystem.
+    if (items[0].getAsFileSystemHandle) {
+      try {
+        const handle = await items[0].getAsFileSystemHandle();
+        if (handle.kind === 'directory') {
+          _dirHandle = handle;
+          showLibraryView();
+          const files = await getAllFilesFromHandle(handle, handle.name);
+          await scanFiles(files);
+          return;
+        }
+      } catch (err) {
+        console.warn('getAsFileSystemHandle failed, falling back:', err);
+      }
+    }
+
+    // Legacy fallback
     const files = items[0].webkitGetAsEntry
       ? await getAllFilesFromDataTransfer(e.dataTransfer)
       : [...e.dataTransfer.files];
@@ -190,14 +319,29 @@ function initDropZone() {
     await scanFiles(files);
   });
 
-  document.getElementById('folder-picker-btn').addEventListener('click', () => {
-    document.getElementById('folder-input').click();
+  // Folder picker: use showDirectoryPicker() when available so we get a handle
+  document.getElementById('folder-picker-btn').addEventListener('click', async () => {
+    if (window.showDirectoryPicker) {
+      try {
+        const handle = await window.showDirectoryPicker({ mode: 'read' });
+        _dirHandle = handle;
+        showLibraryView();
+        const files = await getAllFilesFromHandle(handle, handle.name);
+        await scanFiles(files);
+      } catch (err) {
+        if (err.name !== 'AbortError') console.error('showDirectoryPicker:', err);
+      }
+    } else {
+      document.getElementById('folder-input').click();
+    }
   });
 
+  // Legacy <input> fallback (no directory handle available)
   document.getElementById('folder-input').addEventListener('change', async e => {
     const files = [...e.target.files];
     e.target.value = '';
     if (!files.length) return;
+    _dirHandle = null; // no handle available from input element
     showLibraryView();
     await scanFiles(files);
   });
@@ -266,12 +410,14 @@ function initToolbar() {
   });
 
   document.getElementById('rescan-btn').addEventListener('click', async () => {
-    if (_fileMap.size === 0) {
-      // No files in memory (e.g. page was reloaded) — ask user to re-select
-      document.getElementById('folder-input').click();
-      return;
+    if (_dirHandle) {
+      await rescanFromHandle();
+    } else if (_fileMap.size > 0) {
+      await rescanFromMemory();
+    } else {
+      // Nothing in memory — ask user to re-pick
+      document.getElementById('folder-picker-btn').click();
     }
-    await rescanFromMemory();
   });
 
   document.getElementById('clear-library-btn').addEventListener('click', async () => {
@@ -279,6 +425,7 @@ function initToolbar() {
     await clearAll();
     _allAlbums = [];
     _fileMap.clear();
+    _dirHandle = null;
     showDropZone();
     showToast('Library cleared');
   });
@@ -297,7 +444,7 @@ function initZoomSlider() {
 function initRootPathInput() {
   const input = document.getElementById('root-path-input');
   input.addEventListener('change', async () => {
-    const val = input.value.trim().replace(/\/$/, ''); // strip trailing slash
+    const val = input.value.trim().replace(/\/$/, '');
     input.value = val;
     await setPref('musicRoot', val);
   });
@@ -306,16 +453,38 @@ function initRootPathInput() {
 // ── Rescan single album ───────────────────────────────────────────────────────
 
 document.addEventListener('rescan-album', async e => {
-  const album    = e.detail;
+  const album = e.detail;
+
+  // Primary path: re-read the album directory from the live filesystem handle.
+  if (_dirHandle) {
+    try {
+      await rescanAlbumFromHandle(album);
+    } catch (err) {
+      console.error('rescanAlbumFromHandle failed:', err);
+      showToast('Rescan failed — try re-dropping your folder');
+    }
+    return;
+  }
+
+  // Legacy fallback: use in-memory File objects from the original drop.
+  // NOTE: this cannot pick up files added to disk after the initial drop.
   const fileGroup = _fileMap.get(album.id);
   if (!fileGroup) {
     showToast('Re-drop your music folder to rescan');
     return;
   }
-  // Null out stale cover in IDB and revoke blob URL so waterfall runs fresh
-  album.cover = null;
-  const fakeMap = new Map([[album.id, fileGroup]]);
+
+  const overrides   = await getAllOverrides();
+  const overrideMap = new Map(overrides.map(o => [o.id, o]));
+  const fakeMap     = new Map([[album.id, fileGroup]]);
+
   for await (const { album: fresh } of scanAlbums(fakeMap)) {
+    const ov = overrideMap.get(fresh.id);
+    if (ov) {
+      if (ov.title)              fresh.title  = ov.title;
+      if (ov.artist)             fresh.artist = ov.artist;
+      if (ov.year !== undefined) fresh.year   = ov.year;
+    }
     fresh.favourite = album.favourite;
     fresh.playCount = album.playCount;
     fresh.addedAt   = album.addedAt;
@@ -361,7 +530,6 @@ document.addEventListener('keydown', async e => {
 async function init() {
   await openDB();
 
-  // Restore prefs
   _sortMode     = await getPref('sort',         'az');
   _filterMode   = await getPref('filter',       'all');
   _healthFilter = await getPref('healthFilter', 'all');
@@ -375,7 +543,6 @@ async function init() {
   document.getElementById('root-path-input').value      = musicRoot;
   document.documentElement.style.setProperty('--tile-size', `${zoom}px`);
 
-  // Load persisted albums (no File refs; cover URLs stale after reload)
   const saved = await getAllAlbums();
   if (saved.length > 0) {
     _allAlbums = saved;
