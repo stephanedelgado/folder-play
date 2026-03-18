@@ -8,6 +8,7 @@ import { openDB, getAllAlbums, putAlbum, clearAll, getAllOverrides,
 import { groupByAlbum, scanAlbums } from './scanner.js';
 import { renderGrid, updateTile } from './ui/grid.js';
 import { showToast } from './ui/toast.js';
+import { player } from './player.js';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -89,6 +90,15 @@ async function scanFiles(fileList) {
   const overrides   = await getAllOverrides();
   const overrideMap = new Map(overrides.map(o => [o.id, o]));
 
+  // Build a folderPath-keyed map for lookup — catches edge cases where the
+  // in-memory id might differ from what the scanner generates (e.g. case changes).
+  const byFolderPath = new Map(_allAlbums.map(a => [a.folderPath, a]));
+
+  // Remember which albums were ALREADY marked missing before this scan.
+  // Stale albums in this set will be deleted (confirmed absent after ≥2 scans).
+  // Stale albums NOT in this set are newly missing — kept with a toast.
+  const prevMissingIds = new Set(_allAlbums.filter(a => a.missing).map(a => a.id));
+
   showProgress(`Scanning ${albumMap.size} album${albumMap.size !== 1 ? 's' : ''}…`);
 
   const scannedIds = new Set();
@@ -105,13 +115,22 @@ async function scanFiles(fileList) {
       if (ov.year !== undefined) album.year   = ov.year;
     }
 
-    // Preserve favourite / playCount from previous in-memory state
-    const prev = _allAlbums.find(a => a.id === album.id);
+    // Match by id first, then fall back to folderPath (handles id/path edge cases).
+    const prev = _allAlbums.find(a => a.id === album.id) ?? byFolderPath.get(album.folderPath);
     if (prev) {
+      // If the folderPath matched but the id differs, the old record must be removed
+      // from IDB so we don't accumulate a ghost under the old key.
+      if (prev.id !== album.id) {
+        await deleteAlbum(prev.id);
+        prevMissingIds.delete(prev.id);
+        const prevIdx = _allAlbums.findIndex(a => a.id === prev.id);
+        if (prevIdx >= 0) _allAlbums.splice(prevIdx, 1);
+      }
       album.favourite = prev.favourite ?? album.favourite;
       album.playCount = prev.playCount ?? album.playCount;
       album.addedAt   = prev.addedAt   ?? album.addedAt;
     }
+    album.missing = false;
 
     _fileMap.set(album.id, { audioFiles: album.audioFiles, imageFiles: album.imageFiles });
     await putAlbum(album);
@@ -124,13 +143,28 @@ async function scanFiles(fileList) {
     updateProgress(progress, `Scanned ${count} / ${albumMap.size} albums…`);
   }
 
-  // Delta sync: remove albums no longer present in the drop
+  // Stale = albums in memory not found in this scan.
   const stale = _allAlbums.filter(a => !scannedIds.has(a.id));
   for (const a of stale) {
-    await deleteAlbum(a.id);
-    _fileMap.delete(a.id);
+    if (prevMissingIds.has(a.id)) {
+      // Was already missing in a previous scan — confirmed gone. Delete silently.
+      await deleteAlbum(a.id);
+      _fileMap.delete(a.id);
+    } else {
+      // First time missing — mark and notify. Keep in grid so user can see what's gone.
+      a.missing = true;
+      await putAlbum(a);
+      _fileMap.delete(a.id);
+      updateTile(a);
+      const folderName = a.folderPath.split('/').pop();
+      showToast(`Folder not found: "${folderName}" — may have been renamed or moved.`, {
+        duration: 8000,
+        action: { label: 'Rescan', fn: () => document.getElementById('rescan-btn').click() },
+      });
+    }
   }
-  _allAlbums = _allAlbums.filter(a => scannedIds.has(a.id));
+  // Evict confirmed-deleted albums from memory; keep found + newly-missing.
+  _allAlbums = _allAlbums.filter(a => scannedIds.has(a.id) || (a.missing && !prevMissingIds.has(a.id)));
 
   hideProgress();
   refreshGrid();
@@ -252,9 +286,25 @@ async function rescanAlbumFromHandle(album) {
   }
 
   // Navigate to the album's own directory within the stored root handle.
-  // This re-enumerates the directory from disk, picking up any new files
-  // (cover.jpg added after the initial drop, newly embedded art, etc.).
-  const albumDirHandle = await getSubdirHandle(_dirHandle, album.folderPath);
+  let albumDirHandle;
+  try {
+    albumDirHandle = await getSubdirHandle(_dirHandle, album.folderPath);
+  } catch (err) {
+    if (err.name === 'NotFoundError') {
+      const folderName = album.folderPath.split('/').pop();
+      album.missing = true;
+      await putAlbum(album);
+      const idx = _allAlbums.findIndex(a => a.id === album.id);
+      if (idx >= 0) _allAlbums[idx] = album;
+      updateTile(album);
+      showToast(`Album folder not found: "${folderName}" — it may have been renamed or moved.`, {
+        duration: 8000,
+        action: { label: 'Rescan library', fn: () => document.getElementById('rescan-btn').click() },
+      });
+      return;
+    }
+    throw err;
+  }
   const files = await getAllFilesFromHandle(albumDirHandle, album.folderPath);
 
   const albumMap = groupByAlbum(files);
@@ -274,10 +324,11 @@ async function rescanAlbumFromHandle(album) {
       if (ov.year !== undefined) fresh.year   = ov.year;
     }
 
-    // Preserve user state
+    // Preserve user state; clear missing flag on successful rescan
     fresh.favourite = album.favourite;
     fresh.playCount = album.playCount;
     fresh.addedAt   = album.addedAt;
+    fresh.missing   = false;
 
     // Update file map with fresh File objects so future operations use them
     _fileMap.set(fresh.id, { audioFiles: fresh.audioFiles, imageFiles: fresh.imageFiles });
@@ -566,6 +617,13 @@ async function init() {
     refreshGrid();
     showToast('Library loaded — re-drop your folder to restore playback');
   }
+
+  player.addEventListener('error', () => {
+    showToast('Track not found — the file may have been renamed or moved. Try rescanning.', {
+      duration: 8000,
+      action: { label: 'Rescan', fn: () => document.getElementById('rescan-btn').click() },
+    });
+  });
 
   initDropZone();
   initToolbar();
