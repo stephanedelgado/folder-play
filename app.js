@@ -91,6 +91,8 @@ async function scanFiles(fileList) {
 
   showProgress(`Scanning ${albumMap.size} album${albumMap.size !== 1 ? 's' : ''}…`);
 
+  // Pre-index existing albums for O(1) lookup — avoids O(n²) find() in the loop.
+  const prevByIdx = new Map(_allAlbums.map((a, i) => [a.id, { album: a, idx: i }]));
   const scannedIds = new Set();
   let count = 0;
 
@@ -105,20 +107,21 @@ async function scanFiles(fileList) {
       if (ov.year !== undefined) album.year   = ov.year;
     }
 
-    // Preserve favourite / playCount from previous in-memory state
-    const prev = _allAlbums.find(a => a.id === album.id);
-    if (prev) {
+    // Preserve user state from previous record; revoke its stale cover blob URL.
+    const prevEntry = prevByIdx.get(album.id);
+    if (prevEntry) {
+      const prev = prevEntry.album;
+      if (prev.cover) URL.revokeObjectURL(prev.cover);
       album.favourite = prev.favourite ?? album.favourite;
       album.playCount = prev.playCount ?? album.playCount;
       album.addedAt   = prev.addedAt   ?? album.addedAt;
+      _allAlbums[prevEntry.idx] = album;
+    } else {
+      _allAlbums.push(album);
     }
 
     _fileMap.set(album.id, { audioFiles: album.audioFiles, imageFiles: album.imageFiles });
     await putAlbum(album);
-
-    const idx = _allAlbums.findIndex(a => a.id === album.id);
-    if (idx >= 0) _allAlbums[idx] = album;
-    else          _allAlbums.push(album);
 
     count++;
     updateProgress(progress, `Scanned ${count} / ${albumMap.size} albums…`);
@@ -127,6 +130,7 @@ async function scanFiles(fileList) {
   // Delta sync: remove albums no longer present in the drop
   const stale = _allAlbums.filter(a => !scannedIds.has(a.id));
   for (const a of stale) {
+    if (a.cover) URL.revokeObjectURL(a.cover);
     await deleteAlbum(a.id);
     _fileMap.delete(a.id);
   }
@@ -209,7 +213,9 @@ async function rescanFromMemory() {
   const entries = [..._fileMap.entries()];
   showProgress(`Rescanning ${entries.length} album${entries.length !== 1 ? 's' : ''}…`);
 
+  const prevMap = new Map(_allAlbums.map((a, i) => [a.id, { album: a, idx: i }]));
   let count = 0;
+
   for (const [id, fileGroup] of entries) {
     const fakeMap = new Map([[id, fileGroup]]);
 
@@ -220,18 +226,19 @@ async function rescanFromMemory() {
         if (ov.artist)             fresh.artist = ov.artist;
         if (ov.year !== undefined) fresh.year   = ov.year;
       }
-      const prev = _allAlbums.find(a => a.id === fresh.id);
-      if (prev) {
+      const prevEntry = prevMap.get(fresh.id);
+      if (prevEntry) {
+        const prev = prevEntry.album;
+        if (prev.cover) URL.revokeObjectURL(prev.cover);
         fresh.favourite = prev.favourite ?? fresh.favourite;
         fresh.playCount = prev.playCount ?? fresh.playCount;
         fresh.addedAt   = prev.addedAt   ?? fresh.addedAt;
+        _allAlbums[prevEntry.idx] = fresh;
+      } else {
+        _allAlbums.push(fresh);
       }
       _fileMap.set(fresh.id, { audioFiles: fresh.audioFiles, imageFiles: fresh.imageFiles });
       await putAlbum(fresh);
-      const idx = _allAlbums.findIndex(a => a.id === fresh.id);
-      if (idx >= 0) _allAlbums[idx] = fresh;
-      else          _allAlbums.push(fresh);
-      updateTile(fresh);
     }
 
     count++;
@@ -271,7 +278,9 @@ async function rescanAlbumFromHandle(album) {
       if (ov.year !== undefined) fresh.year   = ov.year;
     }
 
-    // Preserve user state
+    // Preserve user state; revoke stale cover blob URL
+    const existing = _allAlbums.find(a => a.id === fresh.id);
+    if (existing?.cover) URL.revokeObjectURL(existing.cover);
     fresh.favourite = album.favourite;
     fresh.playCount = album.playCount;
     fresh.addedAt   = album.addedAt;
@@ -498,6 +507,8 @@ document.addEventListener('rescan-album', async e => {
       if (ov.artist)             fresh.artist = ov.artist;
       if (ov.year !== undefined) fresh.year   = ov.year;
     }
+    const existing = _allAlbums.find(a => a.id === fresh.id);
+    if (existing?.cover) URL.revokeObjectURL(existing.cover);
     fresh.favourite = album.favourite;
     fresh.playCount = album.playCount;
     fresh.addedAt   = album.addedAt;
@@ -533,9 +544,9 @@ document.addEventListener('keydown', async e => {
     const rel = album.folderPath.split('/').slice(1).join('/');
     path = rel ? `${root}/${rel}` : root;
   }
-  navigator.clipboard.writeText(path).then(() => {
-    showToast(`Path copied \u2014 press \u2318\u21E7G in Finder to navigate`);
-  });
+  navigator.clipboard.writeText(path)
+    .then(() => showToast(`Path copied \u2014 press \u2318\u21E7G in Finder to navigate`))
+    .catch(() => showToast('Could not copy path to clipboard'));
 });
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────

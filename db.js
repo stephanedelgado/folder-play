@@ -77,9 +77,20 @@ export async function clearAlbums() {
 
 export async function updateAlbumField(id, fields) {
   await openDB();
-  const existing = await getAlbum(id);
-  if (!existing) return;
-  return promisify(tx('albums', 'readwrite').put({ ...existing, ...fields }));
+  // Get and put in one readwrite transaction to avoid a TOCTOU race and
+  // the overhead of two separate transactions.
+  return new Promise((resolve, reject) => {
+    const store = tx('albums', 'readwrite');
+    const getReq = store.get(id);
+    getReq.onsuccess = () => {
+      const existing = getReq.result;
+      if (!existing) { resolve(); return; }
+      const putReq = store.put({ ...existing, ...fields });
+      putReq.onsuccess = () => resolve(putReq.result);
+      putReq.onerror  = () => reject(putReq.error);
+    };
+    getReq.onerror = () => reject(getReq.error);
+  });
 }
 
 // ── Overrides store ───────────────────────────────────────────────────────────

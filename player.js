@@ -10,10 +10,10 @@ class MusicPlayer extends EventTarget {
   constructor() {
     super();
     this._ctx = null;
-    this._sourceNode = null;
     this._gainNode = null;
     this._analyserNode = null;
     this._audioEl = null;
+    this._currentBlobUrl = null;
 
     this.queue = [];       // array of File objects
     this.queueAlbum = null;
@@ -156,7 +156,8 @@ class MusicPlayer extends EventTarget {
   setVolume(v) {
     this.volume = Math.max(0, Math.min(1, v));
     this._audioEl.volume = this.volume;
-    if (this._gainNode) this._gainNode.gain.value = this.volume;
+    // gainNode stays at 1.0; applying volume to both the element and the gain
+    // node would double-attenuate (v * v) once the AudioContext is active.
   }
 
   currentTrack() {

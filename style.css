@@ -132,8 +132,7 @@ input:focus:not(:focus-visible) { outline: none; }
 .toolbar__root { display: flex; align-items: center; gap: 8px; color: var(--text-muted); }
 .toolbar__root-input {
   width: 160px; font-size: 0.78rem; padding: 3px 7px;
-  background: var(--surface-2); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); color: var(--text-muted);
+  color: var(--text-muted);
 }
 .toolbar__root-input:focus-visible { color: var(--text); outline: 2px solid var(--accent); }
 .toolbar__root-input:focus:not(:focus-visible) { outline: none; }
@@ -474,14 +473,7 @@ input:focus:not(:focus-visible) { outline: none; }
 .np__btn:hover { color: var(--text); }
 
 /* Play/pause — larger, no circle, primary control */
-.np__btn--play {
-  display: flex; align-items: center; justify-content: center;
-  width: 44px; height: 44px;
-  color: var(--text);
-  border-radius: 4px;
-  background: none;
-  transition: color var(--transition);
-}
+.np__btn--play { width: 44px; height: 44px; color: var(--text); }
 .np__btn--play:hover { color: var(--text-muted); }
 
 #np-play-icon { display: block; }
@@ -586,8 +578,7 @@ input:focus:not(:focus-visible) { outline: none; }
 }
 .modal__box input {
   width: 100%; font-size: 0.95rem; padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-3); border: 1px solid var(--border); color: var(--text);
+  background: var(--surface-3);
 }
 .modal__actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
 

@@ -30,6 +30,7 @@ const MISSING_SVG = `
 let _currentAlbum  = null;
 let _currentTracks = [];
 let _navIndex      = 0;
+let _galleryUrls   = [];
 
 function setNavIndex(i) {
   _navIndex = i;
@@ -61,6 +62,8 @@ export function showDetail(album) {
   const panel = document.getElementById('detail-panel');
 
   const images = [...(album.imageFiles || [])].filter(f => IMAGE_EXTS.has(ext(f.name)));
+  _galleryUrls.forEach(u => URL.revokeObjectURL(u));
+  _galleryUrls = [];
 
   const coverHtml = album.cover
     ? `<img class="detail__cover" src="${album.cover}" alt="Cover">`
@@ -117,7 +120,7 @@ export function showDetail(album) {
         </div>
         ${images.length > 1 ? `
         <div class="detail__gallery">
-          ${images.map(f => `<img class="gallery-thumb" src="${URL.createObjectURL(f)}" alt="${escHtml(f.name)}" loading="lazy">`).join('')}
+          ${images.map(f => { const u = URL.createObjectURL(f); _galleryUrls.push(u); return `<img class="gallery-thumb" src="${u}" alt="${escHtml(f.name)}" loading="lazy">`; }).join('')}
         </div>` : ''}
       </div>
     </div>
@@ -196,6 +199,8 @@ function closeDetail() {
   panel.classList.add('hidden');
   player.removeEventListener('trackchange', updateTrackHighlight);
   player.removeEventListener('statechange', updateTrackHighlight);
+  _galleryUrls.forEach(u => URL.revokeObjectURL(u));
+  _galleryUrls   = [];
   _currentAlbum  = null;
   _currentTracks = [];
 }

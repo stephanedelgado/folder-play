@@ -367,7 +367,7 @@ export function calcHealth({ hasCover, hasEmbeddedTags }) {
 // ── Year from path ────────────────────────────────────────────────────────────
 
 function yearFromPath(path) {
-  const m = path.match(/\b(19[0-9]{2}|20[0-2][0-9])\b/);
+  const m = path.match(/\b(19[0-9]{2}|20[0-9]{2})\b/);
   return m ? m[1] : '';
 }
 
