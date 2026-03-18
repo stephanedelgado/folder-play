@@ -2,13 +2,11 @@
 
 ![folder-play](https://github.com/user-attachments/assets/1dcbc0c4-d123-4003-8a0b-32ae59e7d032)
 
-A minimal browser-based music player for local libraries.
-
-Here's a minimal browser-based music player I built in my spare time. Tired of listening to files on VLC, I wanted a more visual experience. If you have loads of music folders on your laptop, you may find it useful too.
+A browser-based music player built for people with large local music collections. No streaming, no install, no accounts. Drop your music directory into the browser and browse your albums as a grid.
 
 ## How it works
 
-Drop a folder into the browser and it organises your albums into a grid. Pulls cover art from embedded tags or image files in your folders. Your files never leave your machine.
+Drop a folder into the browser, and it organises your albums into a grid. Pulls cover art from embedded tags or image files in your folders. Your files never leave your machine.
 
 ## Features
 
@@ -18,15 +16,13 @@ Drop a folder into the browser and it organises your albums into a grid. Pulls c
 - Health indicator for albums missing artwork or tags
 - Right-click to copy path, rescan, or edit metadata
 - Keyboard media controls (F7 / F8 / F9)
-- Works with FLAC, WAV, MP3, AAC and most other formats
+- Works with FLAC, WAV, MP3, AAC, and most other formats
 
 ## No server. No install. No sync.
 
-Just drop a folder and play.
+Just drop a folder and play → [stephanedelgado.github.io/folder-play](https://stephanedelgado.github.io/folder-play)
 
 **Works in Chrome on macOS.**
-
-→ [stephanedelgado.github.io/folder-play](https://stephanedelgado.github.io/folder-play)
 
 ## Usage
 
@@ -45,10 +41,6 @@ No frameworks. No dependencies. Just browser APIs:
 - **IndexedDB** — persists your library index, cover art cache, favourites, play counts, and metadata overrides across sessions
 - **MediaSession API** — integrates with macOS media controls, Touch Bar, and keyboard media keys (F7 / F8 / F9)
 - **ID3v2 / FLAC metadata parsing** — custom implementation that reads the full tag header size before slicing, avoiding truncated cover art from large embedded images
-
-## Local development
-
-No build step. Clone the repo and open `index.html` in Chrome.
 
 ## License
 
