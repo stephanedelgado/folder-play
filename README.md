@@ -1,5 +1,7 @@
 # Folder.play
 
+![Uploading folder-play.png…]()
+
 A minimal browser-based music player for local libraries.
 
 Here's a minimal browser-based music player I built in my spare time. Tired of listening to files on VLC, I wanted a more visual experience. If you have loads of music folders on your laptop, you may find it useful too.
