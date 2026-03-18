@@ -39,9 +39,10 @@ input, select {
   border-radius: var(--radius-sm); padding: 4px 8px;
 }
 select { cursor: pointer; outline: none; }
+select:focus { outline: none; box-shadow: none; }
 /* Only show focus ring for keyboard navigation, not mouse clicks */
-input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-input:focus:not(:focus-visible), select:focus:not(:focus-visible) { outline: none; }
+input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+input:focus:not(:focus-visible) { outline: none; }
 
 .hidden { display: none !important; }
 
