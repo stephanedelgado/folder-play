@@ -85,13 +85,18 @@ function renderTile(album) {
   // Click on art (not play btn or fav) → detail view
   div.querySelector('.album-tile__art').addEventListener('click', e => {
     if (e.target.closest('.album-tile__play-btn') || e.target.closest('.album-tile__fav')) return;
+    if (album.missing) { showToast('Folder not found — please rescan'); return; }
     showDetail(album);
   });
-  div.querySelector('.album-tile__info').addEventListener('click', () => showDetail(album));
+  div.querySelector('.album-tile__info').addEventListener('click', () => {
+    if (album.missing) { showToast('Folder not found — please rescan'); return; }
+    showDetail(album);
+  });
 
-  // Play/pause button
+  // Play/pause button — must not affect the player if the album is missing
   div.querySelector('.album-tile__play-btn').addEventListener('click', e => {
     e.stopPropagation();
+    if (album.missing) { showToast('Folder not found — please rescan'); return; }
     if (player.queueAlbum?.id === album.id) {
       player.togglePlayPause();
     } else {
@@ -205,6 +210,7 @@ async function onMenuClick(e) {
 
   switch (btn.dataset.action) {
     case 'play':
+      if (album.missing) { showToast('Folder not found — please rescan'); break; }
       player.loadAlbum(album, album.audioFiles || [], 0);
       break;
 
