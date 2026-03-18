@@ -231,6 +231,16 @@ input:focus:not(:focus-visible), select:focus:not(:focus-visible) { outline: non
 .album-tile__fav:not(.is-fav):hover svg polygon { stroke: rgba(255,255,255,0.75); }
 .album-tile__fav.is-fav svg polygon { fill: #fbbf24; stroke: #fbbf24; }
 
+.album-tile__needs-tags {
+  position: absolute; bottom: 6px; left: 6px; z-index: 4;
+  display: flex; align-items: center;
+  background: rgba(0,0,0,0.55); border-radius: 4px; padding: 2px 4px;
+  color: #f59e0b;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.album-tile.is-hovered .album-tile__needs-tags { opacity: 1; }
+
 /* Play/pause button inside art */
 .album-tile__play-btn {
   position: absolute; inset: 0;
