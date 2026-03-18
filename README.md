@@ -1,6 +1,6 @@
 # Folder.play
 
-![Uploading folder-play.png…]()
+![folder-play](https://github.com/user-attachments/assets/1dcbc0c4-d123-4003-8a0b-32ae59e7d032)
 
 A minimal browser-based music player for local libraries.
 
