@@ -325,7 +325,7 @@ input:focus:not(:focus-visible), select:focus:not(:focus-visible) { outline: non
 
 .detail__left {
   flex: 1; min-width: 0; overflow-y: auto; padding: 16px 8px 16px 20px;
-  border-right: 1px solid var(--border);
+  border-right: 1px solid var(--border); outline: none;
 }
 
 .detail__right {
@@ -406,6 +406,7 @@ input:focus:not(:focus-visible), select:focus:not(:focus-visible) { outline: non
 .tracklist__row { cursor: pointer; transition: background var(--transition); }
 .tracklist__row:hover   { background: var(--surface-2); }
 .tracklist__row.is-current { background: var(--surface-2); }
+.tracklist__row.is-nav     { outline: 1px solid var(--accent); outline-offset: -1px; }
 .tracklist__row.is-playing { background: rgba(136,136,136,0.1); }
 .tracklist__row.is-playing .tracklist__name { color: var(--text); font-weight: 600; }
 

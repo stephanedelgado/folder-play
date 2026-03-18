@@ -27,7 +27,18 @@ const MISSING_SVG = `
     <polyline points="21 15 16 10 5 21"/>
   </svg>`;
 
-let _currentAlbum = null;
+let _currentAlbum  = null;
+let _currentTracks = [];
+let _navIndex      = 0;
+
+function setNavIndex(i) {
+  _navIndex = i;
+  document.querySelectorAll('.tracklist__row').forEach(row => {
+    row.classList.toggle('is-nav', parseInt(row.dataset.index, 10) === i);
+  });
+  const row = document.querySelector(`.tracklist__row[data-index="${i}"]`);
+  if (row) row.scrollIntoView({ block: 'nearest' });
+}
 
 async function copyTrackFilePath(file) {
   const root = await getPref('musicRoot', '');
@@ -42,12 +53,12 @@ async function copyTrackFilePath(file) {
 }
 
 export function showDetail(album) {
-  _currentAlbum = album;
-  const panel = document.getElementById('detail-panel');
-
-  const tracks = [...(album.audioFiles || [])].sort((a, b) =>
+  _currentAlbum  = album;
+  _currentTracks = [...(album.audioFiles || [])].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { numeric: true })
   );
+  const tracks = _currentTracks;
+  const panel = document.getElementById('detail-panel');
 
   const images = [...(album.imageFiles || [])].filter(f => IMAGE_EXTS.has(ext(f.name)));
 
@@ -65,7 +76,7 @@ export function showDetail(album) {
       <div class="detail__topbar-title">${escHtml(album.artist)} &mdash; ${escHtml(album.title)}</div>
     </div>
     <div class="detail__body">
-      <div class="detail__left">
+      <div class="detail__left" tabindex="-1">
         <table class="tracklist">
           <thead>
             <tr>
@@ -114,6 +125,15 @@ export function showDetail(album) {
 
   panel.classList.remove('hidden');
 
+  // Keyboard nav: start cursor at playing track (if this album), else 0
+  _navIndex = (player.queueAlbum?.id === album.id) ? (player.currentIndex || 0) : 0;
+
+  updateTrackHighlight();
+  setNavIndex(_navIndex);
+
+  // Focus tracklist so arrow keys work immediately
+  panel.querySelector('.detail__left').focus({ preventScroll: true });
+
   panel.querySelector('.detail__back').addEventListener('click', closeDetail);
 
   panel.querySelector('.detail__play-all').addEventListener('click', () => {
@@ -135,7 +155,9 @@ export function showDetail(album) {
   panel.querySelector('#tracklist-body').addEventListener('click', e => {
     const row = e.target.closest('.tracklist__row');
     if (!row) return;
-    player.loadAlbum(album, tracks, parseInt(row.dataset.index, 10));
+    const idx = parseInt(row.dataset.index, 10);
+    setNavIndex(idx);
+    player.loadAlbum(album, tracks, idx);
   });
 
   panel.querySelector('#tracklist-body').addEventListener('contextmenu', async e => {
@@ -165,7 +187,6 @@ export function showDetail(album) {
     }, { once: true }), 0);
   });
 
-  updateTrackHighlight();
   player.addEventListener('trackchange', updateTrackHighlight);
   player.addEventListener('statechange', updateTrackHighlight);
 }
@@ -175,7 +196,8 @@ function closeDetail() {
   panel.classList.add('hidden');
   player.removeEventListener('trackchange', updateTrackHighlight);
   player.removeEventListener('statechange', updateTrackHighlight);
-  _currentAlbum = null;
+  _currentAlbum  = null;
+  _currentTracks = [];
 }
 
 function updateTrackHighlight() {
@@ -188,8 +210,22 @@ function updateTrackHighlight() {
 }
 
 document.addEventListener('keydown', e => {
+  const panel = document.getElementById('detail-panel');
+  if (panel.classList.contains('hidden')) return;
+
+  const n = _currentTracks.length;
+
   if (e.key === 'Escape') {
-    const panel = document.getElementById('detail-panel');
-    if (!panel.classList.contains('hidden')) closeDetail();
+    closeDetail();
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (n > 0) setNavIndex((_navIndex + 1) % n);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (n > 0) setNavIndex((_navIndex - 1 + n) % n);
+  } else if (e.key === 'Enter') {
+    if (_currentAlbum && n > 0) {
+      player.loadAlbum(_currentAlbum, _currentTracks, _navIndex);
+    }
   }
 });

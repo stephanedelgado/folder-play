@@ -66,7 +66,23 @@ function hideProgress() {
 
 // ── File scanning ─────────────────────────────────────────────────────────────
 
+function resetFilters() {
+  _sortMode     = 'az';
+  _filterMode   = 'all';
+  _healthFilter = 'all';
+  const sortSel   = document.getElementById('sort-select');
+  const filterSel = document.getElementById('filter-select');
+  const healthSel = document.getElementById('health-filter-select');
+  if (sortSel)   sortSel.value   = _sortMode;
+  if (filterSel) filterSel.value = _filterMode;
+  if (healthSel) healthSel.value = _healthFilter;
+  setPref('sort',         _sortMode);
+  setPref('filter',       _filterMode);
+  setPref('healthFilter', _healthFilter);
+}
+
 async function scanFiles(fileList) {
+  resetFilters();
   const albumMap = groupByAlbum(fileList);
   if (albumMap.size === 0) { showToast('No audio files found'); return; }
 
